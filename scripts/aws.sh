@@ -18,18 +18,12 @@ FINAL_CERTS=/tmp/final
 mkdir -p $FINAL_CERTS
 
 # Get apps wildcard domain.
-LE_WILDCARD=$(oc get ingresscontroller default -n openshift-ingress-operator -o jsonpath='{.status.domain}')
+LE_WILDCARD=$(oc get ingresscontroller $INGRESS_CONTROLLER -n openshift-ingress-operator -o jsonpath='{.status.domain}')
 echo "LE_WILDCARD: $LE_WILDCARD"
-
-# From wildcard domain, determine the api url.
-LE_API=$( echo "$LE_WILDCARD" | cut -d'.' -f2- )
-LE_API="api.$LE_API"
-echo "API: $LE_API"
 
 issue_args=(
     --issue
     --dns dns_aws
-    -d "$LE_API"
     -d "*.$LE_WILDCARD"
     --home /tmp
     --cert-home /tmp
@@ -46,7 +40,6 @@ echo "Run: ./acme.sh ${issue_args[@]}"
 
 install_args=(
     --install-cert
-    -d "$LE_API"
     -d "*.$LE_WILDCARD"
     --cert-file "$FINAL_CERTS/cert.pem"
     --key-file "$FINAL_CERTS/key.pem"
@@ -66,7 +59,7 @@ echo "Run: ./acme.sh ${install_args[@]}"
 ./acme.sh "${install_args[@]}"
 
 # Lets Enctrypt cert secret name.
-LE_CERTS_SECRET_NAME="le-certs-$(date '+%Y-%m-%d')"
+LE_CERTS_SECRET_NAME="le-certs-$INGRESS_CONTROLLER-$(date '+%Y-%m-%d')"
 
 if [ -f "$FINAL_CERTS/fullchain.pem" ]; then
     secret_args=(
@@ -88,11 +81,7 @@ if [ -f "$FINAL_CERTS/fullchain.pem" ]; then
 
     # Patch ingress with new secret if NOT STAGING.
     if [ "$STAGING" == false ] ; then
-        oc patch ingresscontroller default -n openshift-ingress-operator --type=merge --patch='{"spec": { "defaultCertificate": { "name": "'$LE_CERTS_SECRET_NAME'" }}}'
-        # Patch api server with new secret if NOT STAGING.
-        if [ "$PATCH_API_SERVER" == true ] ; then
-            oc patch apiserver cluster --type=merge -p '{"spec":{"servingCerts": {"namedCertificates": [{"names": ["'$LE_API'"], "servingCertificate": {"name": "'$LE_CERTS_SECRET_NAME'"}}]}}}'
-        fi
+        oc patch ingresscontroller $INGRESS_CONTROLLER -n openshift-ingress-operator --type=merge --patch='{"spec": { "defaultCertificate": { "name": "'$LE_CERTS_SECRET_NAME'" }}}'
     fi
 
 else 
